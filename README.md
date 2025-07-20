@@ -56,6 +56,5 @@ To run the prototype:
    ```bash
    pip install mediapipe opencv-python
    ```
-2. Open and run the Jupyter notebook at `demo/mediapipe_gesture_demo.ipynb`
-3. Ensure your webcam is connected and well-lit.
-4. Perform gestures in front of the camera to see the tray watering logic in action.
+2. Ensure your webcam is connected and well-lit.
+3. Perform gestures in front of the camera to see the tray watering logic in action.
