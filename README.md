@@ -22,7 +22,7 @@ Vision-ai-plant-watering/
 ├── README.md                 <- Overview of the project
 ├── architecture-diagram.png <- Visual layout of your system
 ├── Hand_detect_Cv/
-│   └── mediapipe_gesture_demo.ipynb  <- Working prototype notebook
+│   └── GreenGo.py  <- Working prototype notebook
 ├── Project_Docs/
 │   ├
 │   └──Projecct_expaliner.pdf
