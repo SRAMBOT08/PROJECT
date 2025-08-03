@@ -2,60 +2,64 @@ import cv2
 import mediapipe as mp
 import time
 
-# Initialize MediaPipe
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
-# Functions for each tray
+# Status
+watering_active = False
+current_tray = None
+status_message = "Show a gesture to start watering."
+last_action_time = 0
+cooldown = 1  # seconds
+
+gesture_buffer = []
+buffer_size = 5
+
+def log_water_time(message):
+    with open("watering_log.txt", "a") as file:
+        file.write(f"{time.ctime()}: {message}\n")
+
+# Tray functions
+def water_tray(tray_number):
+    global watering_active, current_tray, status_message
+    watering_active = True
+    current_tray = f"tray{tray_number}"
+    status_message = f"Watering Tray {tray_number}... Show Fist to Stop."
+    log_water_time(f"Watered Tray {tray_number}")
+
 def water_all_trays():
-    print("💧 Watering ALL trays!")
+    global watering_active, current_tray, status_message
+    watering_active = True
+    current_tray = "all"
+    status_message = "Watering ALL trays... Show Fist to Stop."
+    log_water_time("Watered All Trays")
 
-def water_tray_1():
-    print("💧 Watering Tray 1"
+def stop_watering():
+    global watering_active, current_tray, status_message
+    watering_active = False
+    current_tray = None
+    status_message = "Watering Stopped. Show Gesture to Start Again."
+    log_water_time("Watering stopped")
 
-def water_tray_2():
-    print("💧 Watering Tray 2")
-
-def water_tray_3():
-    print("💧 Watering Tray 3")
-
-# Detect open palm
-def is_open_palm(hand_landmarks):
-    tips_ids = [4, 8, 12, 16, 20]
-    fingers_open = 0
-
-    # Thumb
-    if hand_landmarks.landmark[4].x < hand_landmarks.landmark[3].x:
-        fingers_open += 1
-
-    # Other fingers
-    for tip_id in tips_ids[1:]:
-        if hand_landmarks.landmark[tip_id].y < hand_landmarks.landmark[tip_id - 2].y:
-            fingers_open += 1
-
-    return fingers_open == 5
-
-# Detect which fingers are up
+# Better hand detection
 def fingers_up(hand_landmarks):
+    fingers = []
     tips_ids = [4, 8, 12, 16, 20]
-    status = []
 
     # Thumb
-    status.append(hand_landmarks.landmark[4].x < hand_landmarks.landmark[3].x)
+    fingers.append(int(hand_landmarks.landmark[tips_ids[0]].x < hand_landmarks.landmark[tips_ids[0] - 1].x))
+    # Index to pinky
+    for id in range(1, 5):
+        fingers.append(int(hand_landmarks.landmark[tips_ids[id]].y < hand_landmarks.landmark[tips_ids[id] - 2].y))
 
-    # Index to Pinky
-    for tip_id in tips_ids[1:]:
-        status.append(hand_landmarks.landmark[tip_id].y < hand_landmarks.landmark[tip_id - 2].y)
+    return tuple(fingers)
 
-    return status  # [Thumb, Index, Middle, Ring, Pinky]
-
-# Webcam
+# Webcam setup
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-last_trigger_time = 0
-cooldown = 3  # seconds
-
-with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7) as hands:
+with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.5, min_tracking_confidence=0.5) as hands:
     while cap.isOpened():
         success, frame = cap.read()
         if not success:
@@ -66,54 +70,42 @@ with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7) a
         results = hands.process(rgb)
         frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
+        gesture_detected = None
+
         if results.multi_hand_landmarks:
             for hand_landmarks in results.multi_hand_landmarks:
                 mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                fingers = fingers_up(hand_landmarks)
+                gesture_buffer.append(fingers)
+                if len(gesture_buffer) > buffer_size:
+                    gesture_buffer.pop(0)
 
-                finger_status = fingers_up(hand_landmarks)
+                if all(g == gesture_buffer[0] for g in gesture_buffer):
+                    gesture_detected = gesture_buffer[0]
 
-                # Open palm
-                if all(finger_status):
-                    cv2.putText(frame, "Open Palm: Water All Trays", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    if time.time() - last_trigger_time > cooldown:
-                        water_all_trays()
-                        last_trigger_time = time.time()
+        # Cooldown check
+        if gesture_detected and time.time() - last_action_time > cooldown:
+            if gesture_detected == (0, 0, 0, 0, 0):
+                if watering_active:
+                    stop_watering()
+            elif gesture_detected == (1, 1, 1, 1, 1):
+                if not watering_active or current_tray != 'all':
+                    water_all_trays()
+            elif gesture_detected == (0, 1, 0, 0, 0):
+                if not watering_active or current_tray != 'tray1':
+                    water_tray(1)
+            elif gesture_detected == (0, 1, 1, 0, 0):
+                if not watering_active or current_tray != 'tray2':
+                    water_tray(2)
+            elif gesture_detected == (0, 1, 1, 1, 0):
+                if not watering_active or current_tray != 'tray3':
+                    water_tray(3)
+            last_action_time = time.time()
 
-                # Only Index finger (Tray 1)
-                elif finger_status[1] and not any(finger_status[2:]):
-                    cv2.putText(frame, "Index Finger: Water Tray 1", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-                    if time.time() - last_trigger_time > cooldown:
-                        water_tray_1()
-                        last_trigger_time = time.time()
-
-                # Index + Middle (Tray 2)
-                elif finger_status[1] and finger_status[2] and not any(finger_status[3:]):
-                    cv2.putText(frame, "2 Fingers: Water Tray 2", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 100, 0), 2)
-                    if time.time() - last_trigger_time > cooldown:
-                        water_tray_2()
-                        last_trigger_time = time.time()
-
-                # Index + Middle + Ring (Tray 3)
-                elif finger_status[1] and finger_status[2] and finger_status[3] and not finger_status[4]:
-                    cv2.putText(frame, "3 Fingers: Water Tray 3", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 2)
-                    if time.time() - last_trigger_time > cooldown:
-                        water_tray_3()
-                        last_trigger_time = time.time()
-
-                else:
-                    cv2.putText(frame, "Gesture Not Recognized", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
-        else:
-            cv2.putText(frame, "Show your hand...", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
+        cv2.putText(frame, status_message, (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (50, 255, 50), 2)
 
         cv2.imshow("Gesture Controlled Watering", frame)
-
         if cv2.waitKey(5) & 0xFF == 27:
             break
 
